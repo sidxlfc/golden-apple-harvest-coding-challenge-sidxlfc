@@ -1,0 +1,11 @@
+#!/bin/bash
+FORBIDDEN_FILES=(".github/", "lib/", "index.js")
+
+for file in $(git diff --cached --name-only); do
+  for forbidden in "${FORBIDDEN_FILES[@]}"; do
+    if [[ "$file" == "$forbidden"* ]]; then
+      echo "❌ Error: Changes to $file are not allowed!"
+      exit 1
+    fi
+  done
+done

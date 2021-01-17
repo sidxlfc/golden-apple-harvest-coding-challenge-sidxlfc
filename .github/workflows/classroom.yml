@@ -1,0 +1,109 @@
+name: Autograding Tests
+
+on:
+  pull_request:
+    types:
+      - opened
+      - labeled
+      - synchronize
+  workflow_dispatch: # Allows for manual triggering, if needed
+
+env:
+  HUSKY: 0
+
+permissions:
+  checks: write
+  actions: read
+  contents: read
+jobs:
+  setup-grading:
+    name: Setup grading
+    runs-on: ubuntu-latest
+    if: >
+      github.run_number == '1' &&
+      github.repository != 'sesolabor-interviews/golden-apple-harvest'
+    steps:
+    - name: Setup grading
+      run: |
+        curl -X POST "${{ secrets.SESO_GRADING_SERVER_HOST }}/setup-grading/golden-apple-harvest" \
+          -H "Authorization: Bearer ${{ secrets.CODING_CHALLENGE_API_SECRET }}" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "repositoryURL": "${{ github.repository }}",
+            "pullRequestNumber": "${{ github.event.pull_request.number }}"
+          }'
+
+  check-restricted-files-changes:
+    name: Check that restricted files are not modified
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for restricted file changes
+        run: |
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          FORBIDDEN_FILES=(".github/" "lib/", "index.js")
+
+          for file in $CHANGED_FILES; do
+            for forbidden in "${FORBIDDEN_FILES[@]}"; do
+              if [[ "$file" == "$forbidden"* ]]; then
+                echo "❌ Modification of $file is not allowed!"
+                exit 1
+              fi
+            done
+          done
+
+  run-autograding-tests:
+    needs:
+      - check-restricted-files-changes
+    runs-on: ubuntu-latest
+    if: >
+      github.repository != 'sesolabor-interviews/golden-apple-harvest' &&
+      github.actor != 'github-classroom[bot]' &&
+      (
+        (github.event.action == 'labeled' && github.event.label.name == 'Ready to Review') ||
+        (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'Ready to Review'))
+      )
+    concurrency:
+      group: autograding-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Does the test run?
+      timeout-minutes: 5
+      id: does-the-test-run
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: Does the test run?
+        setup-command: npm install
+        command: LOG_LEVEL="info" node index.js
+        timeout: 5
+        max-score: 1
+    - name: Hi there
+      id: debug-context
+      env:
+        GITHUB_CONTEXT: ${{ toJson(github) }}
+      run: echo "Hello there, is it me you're looking for? 👀"
+    - name: Grade the solutions
+      timeout-minutes: 30
+      id: grade-solutions
+      env:
+        SESO_GRADING_SERVER_HOST: ${{ secrets.SESO_GRADING_SERVER_HOST }}
+        CODING_CHALLENGE_API_SECRET: ${{ secrets.CODING_CHALLENGE_API_SECRET }}
+        CODING_CHALLENGE_ASYNC_ITERATIONS: ${{ secrets.CODING_CHALLENGE_ASYNC_ITERATIONS }}
+        CODING_CHALLENGE_SYNC_ITERATIONS: ${{ secrets.CODING_CHALLENGE_SYNC_ITERATIONS }}
+        REPOSITORY: ${{ github.repository }}
+        PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+        RUN_NUMBER: ${{ github.run_number }}
+        RUN_ID: ${{ github.run_id }}
+      run: node .github/workflows/run_solutions.js
+    - name: Autograding Reporter
+      uses: classroom-resources/autograding-grading-reporter@v1
+      env:
+        DOES-THE-TEST-RUN_RESULTS: "${{steps.does-the-test-run.outputs.result}}"
+      with:
+        runners: does-the-test-run
