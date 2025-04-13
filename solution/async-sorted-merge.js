@@ -7,11 +7,17 @@ export const asyncSortedMerge = async(logSources, printer) => {
 
     const heap = new MinHeap();
 
-    // Initialize the heap with the first entry from each log source
-    for (let i = 0; i < logSources.length; i++) {
-        const entry = await logSources[i].popAsync();
+    // Initialize the heap with the first entry from each log source concurrently
+    const initialEntries = await Promise.all(
+        logSources.map((source, index) =>
+            source.popAsync().then(entry => entry ? { date: entry.date, msg: entry.msg, sourceIndex: index } : null)
+        )
+    );
+
+    // Insert non-null entries into the heap
+    for (const entry of initialEntries) {
         if (entry) {
-            heap.insert({ date: entry.date, msg: entry.msg, sourceIndex: i });
+            heap.insert(entry);
         }
     }
 
