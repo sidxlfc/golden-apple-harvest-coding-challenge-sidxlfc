@@ -6,30 +6,30 @@ import MinHeap from "./min-heap.js";
 export const asyncSortedMerge = async(logSources, printer) => {
 
     const heap = new MinHeap();
+    let activeSources = logSources.length;
 
-    // Initialize the heap with the first entry from each log source concurrently
-    const initialEntries = await Promise.all(
-        logSources.map((source, index) =>
-            source.popAsync().then(entry => entry ? { date: entry.date, msg: entry.msg, sourceIndex: index } : null)
-        )
-    );
-
-    // Insert non-null entries into the heap
-    for (const entry of initialEntries) {
-        if (entry) {
-            heap.insert(entry);
+    // Producer: Fetch entries from log sources concurrently
+    const fetchEntries = async (source, index) => {
+        while (true) {
+            const entry = await source.popAsync();
+            if (!entry) {
+                // Mark this source as drained
+                activeSources--;
+                break;
+            }
+            // Insert the entry into the heap
+            heap.insert({ date: entry.date, msg: entry.msg, sourceIndex: index });
         }
-    }
+    };
 
-    // Process the heap until all log sources are drained
-    while (!heap.isEmpty()) {
-        const { date, msg, sourceIndex } = heap.remove();
-        printer.print({ date, msg });
+    // Start fetching from all log sources concurrently
+    await Promise.all(logSources.map((source, index) => fetchEntries(source, index)));
 
-        // Fetch the next entry from the same log source
-        const nextEntry = await logSources[sourceIndex].popAsync();
-        if (nextEntry) {
-            heap.insert({ date: nextEntry.date, msg: nextEntry.msg, sourceIndex });
+    // Consumer: Process the heap until all sources are drained
+    while (activeSources > 0 || !heap.isEmpty()) {
+        if (!heap.isEmpty()) {
+            const { date, msg } = heap.remove();
+            printer.print({ date, msg });
         }
     }
 
