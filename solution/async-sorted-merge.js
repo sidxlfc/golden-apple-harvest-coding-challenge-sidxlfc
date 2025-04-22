@@ -3,7 +3,7 @@ import MinHeap from "./min-heap.js";
 
 // Print all entries, across all of the *async* sources, in chronological order.
 
-export const asyncSortedMerge = async(logSources, printer, bufferSize = logSources.length * 2 + 2) => {
+export const asyncSortedMerge = async(logSources, printer, bufferSize = logSources.length) => {
 
     const heap = new MinHeap();
     const promises = new Array();
@@ -19,7 +19,6 @@ export const asyncSortedMerge = async(logSources, printer, bufferSize = logSourc
                 promisesForThisLogsource.push(logSources[i].popAsync());
                 bufferUsed++;
             }
-            console.log(`Pushing ${entry.msg} from source ${i}`);
             heap.insert({ date: entry.date, msg: entry.msg, sourceIndex: i });
         }
         promises.push(promisesForThisLogsource);
@@ -27,7 +26,6 @@ export const asyncSortedMerge = async(logSources, printer, bufferSize = logSourc
 
     while (!heap.isEmpty()) {
         let { date, msg, sourceIndex } = heap.remove();
-        console.log(`Printing ${msg} from source ${sourceIndex}`);
         const promisesForThisLogsource = promises[sourceIndex];
         printer.print({ date, msg });
 
