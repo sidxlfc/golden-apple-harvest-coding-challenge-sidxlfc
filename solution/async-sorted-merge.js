@@ -15,11 +15,11 @@ export const asyncSortedMerge = async(logSources, printer, bufferSize = logSourc
         const entry = await logSources[i].popAsync();
         let promisesForThisLogsource = new Array();
         if (entry) {
-            for (let j = 0; j < multiple - 1 && bufferUsed < bufferSize; j++) {
+            heap.insert({ date: entry.date, msg: entry.msg, sourceIndex: i });
+            for (let j = 0; j < multiple - 1 && bufferUsed < bufferSize && !logSources[i].drained; j++) {
                 promisesForThisLogsource.push(logSources[i].popAsync());
                 bufferUsed++;
             }
-            heap.insert({ date: entry.date, msg: entry.msg, sourceIndex: i });
         }
         promises.push(promisesForThisLogsource);
     }
@@ -37,12 +37,11 @@ export const asyncSortedMerge = async(logSources, printer, bufferSize = logSourc
             nextEntry = await logSources[sourceIndex].popAsync();
         }
         if (nextEntry) {
-            if (bufferUsed < bufferSize && !logSources[sourceIndex].drained) {
-                promisesForThisLogsource.push(logSources[sourceIndex].popAsync());
-                bufferUsed++;
-            }
-            promises[sourceIndex] = promisesForThisLogsource;
             heap.insert({ date: nextEntry.date, msg: nextEntry.msg, sourceIndex });
+        }
+        if (bufferUsed < bufferSize && !logSources[sourceIndex].drained) {
+            promisesForThisLogsource.push(logSources[sourceIndex].popAsync());
+            bufferUsed++;
         }
     }
 
